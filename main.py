@@ -1,4 +1,4 @@
-# main.py
+# main.py Ch Jun 23 suggestions
 
 from flask import Flask, render_template, request
 import pandas as pd
@@ -7,14 +7,20 @@ import io
 import matplotlib.pyplot as plt
 import base64
 
-df = pd.read_csv("data/expenses.csv") # read csv and set to dataframe df
-conn = sql.connect("data.db") # connect to sqlite and create database data.db
-df.to_sql("expenses", conn, if_exists = "replace", index = False) # insert dataframe into sql table called expenses
-#c = conn.cursor() # create cursor object
-#c.execute("SELECT * FROM expenses") # execute query to select everything in expenses db
-#for row in c.fetchall(): # return all results of query
-#    print(row)
 
+
+# CH: set this to 1 to recreate or overwrite the SQL with your hand edited csv file
+if 0:
+    df = pd.read_csv("data/expenses.csv") # read csv and set to dataframe df
+    conn = sql.connect("data.db") # connect to sqlite and create database data.db
+    df.to_sql("expenses", conn, if_exists = "replace", index = False) # insert dataframe into sql table called expenses
+    #c = conn.cursor() # create cursor object
+    #c.execute("SELECT * FROM expenses") # execute query to select everything in expenses db
+    #for row in c.fetchall(): # return all results of query
+    #    print(row)
+    conn.close()
+
+'''
 conn = sql.connect("data.db") # connect to sqlite
 df_from_sql = pd.read_sql_query("SELECT * FROM expenses", con=conn) # read sql query into pandas dataframe
 #print(df_from_sql)
@@ -46,6 +52,11 @@ categorySum=sortedData.groupby('category').sum()
 #plt.ylabel('')
 #plt.show()
 #exit()
+'''
+
+# CH read in category.csv into a list, so you can add new categories
+# (requires server restart ...)
+#cat_list = .....
 
 app = Flask(__name__)
 
@@ -57,23 +68,28 @@ def index():
 # FLASK:  ADD ITEM
 @app.route('/add_item', methods=["POST", "GET"])
 def add_item():
-    if request.method == 'POST':
+    if request.method == 'POST':  # CH what happens on GET?
         try:
             conn = sql.connect("data.db") # connect to sqlite
             c = conn.cursor() # create cursor object
-            c.execute("INSERT INTO expenses (name, category, price, quantity, date) VALUES (?,?,?,?,?)",
+            c.execute("INSERT INTO expenses (Name, Category, Price, Quantity, `Purchase Date`) VALUES (?,?,?,?,?)", 
+                                            # CH must protect column name with space via backticks!
                 (request.form["name"],
                 request.form["category"],
                 request.form["price"],
                 request.form["quantity"],
                 request.form["date"])) 
-            df = pd.read_sql_query("SELECT * FROM expenses", con=conn) # execute query to select everything in expenses db
-            df.to_csv("data/expenses.csv") # write dataframe to expenses.csv file
+            # CH took these out, only use SQL DB when running server
+            #df = pd.read_sql_query("SELECT * FROM expenses", con=conn) # execute query to select everything in expenses db
+            #df.to_csv("data/expenses.csv") # write dataframe to expenses.csv file
             conn.commit() # apply changes
-        except:
-            print("Error")
+        except Exception as e:
+            print("Error", e)
         finally:
+            print(pd.read_sql_query("SELECT * FROM expenses", con=conn)) # CH print out new state
             conn.close() # close connection
+
+    # you should inline the pulldown list with cat_list
     return render_template("add_item.html")
 
 # FLASK:  VIEW SPENDING HISTORY
@@ -96,10 +112,23 @@ def spending():
 #MATPLOTLIB to show and plot certain statistics - first plot will be total spent in each category
 @app.route('/expenses_per_month', methods=["GET"])
 def catPlot():
+
+    conn = sql.connect("data.db") # connect to sqlite
+    df_from_sql = pd.read_sql_query("SELECT * FROM expenses", con=conn) # read sql query into pandas dataframe
+    #print(df_from_sql)
+    #print(df_from_sql.dtypes)
+    conn.close()
+
+    #Data manipulation for MATPLOTLIB bar plot - preprocessing data columns
+    sortedData=df_from_sql.sort_values("Purchase Date")
+    sortedData['Month_Year']=pd.to_datetime(sortedData['Purchase Date']).dt.to_period('M')
+    monthSum=sortedData.groupby('Month_Year')['Price'].sum().to_frame().reset_index().sort_values(by='Price')
+
+
     #Start data into memory buffer
     barImage=io.BytesIO()
     #Plot data from preprocessed data to get total expenses per month
-    monthSum.plot.bar(x="Month_Year", y="price", color="orange", width=0.4, legend=None)
+    monthSum.plot.bar(x="Month_Year", y="Price", color="orange", width=0.4, legend=None)
     #Label the x axis of the matplotlib plot
     plt.xlabel("Month")
     #Label the y axis of the matplotlib plot
@@ -120,10 +149,21 @@ def catPlot():
 
 @app.route('/expenses_per_category', methods=["GET"])
 def piePlot():
+
+    conn = sql.connect("data.db") # connect to sqlite
+    df_from_sql = pd.read_sql_query("SELECT * FROM expenses", con=conn) # read sql query into pandas dataframe
+    #print(df_from_sql)
+    #print(df_from_sql.dtypes)
+    conn.close()
+
+    #Data manipulation for MATPLOTLIB bar plot - preprocessing data columns
+    sortedData=df_from_sql.sort_values("Purchase Date")
+    categorySum=sortedData.groupby('Category').sum()
+
     #Start data into memory buffer
     pieImage=io.BytesIO()
     #Plot data from preprocessed data to get pie chart of expenses per category
-    categorySum.plot.pie(y='quantity', legend=None, autopct='%.1f%%')
+    categorySum.plot.pie(y='Quantity', legend=None, autopct='%.1f%%')
     #Remove y label from pie plot
     plt.ylabel('')
     #Label the title of the matplotlib plot
@@ -143,3 +183,4 @@ def piePlot():
 
 if __name__ == "__main__":
     app.run()
+    # CH could backup the SQL DB into a csv file here ...
